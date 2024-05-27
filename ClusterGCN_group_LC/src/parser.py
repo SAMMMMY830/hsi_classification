@@ -31,7 +31,7 @@ def parameter_parser():
 
     parser.add_argument("--dropout",
                         type=float,
-                        default=0.2,
+                        default=0.5,
                         help="Dropout parameter. Default is 0.5.")
     # model
     # learnable parameters in aggr
@@ -66,7 +66,7 @@ def parameter_parser():
 
     parser.add_argument("--learning-rate",
                         type=float,
-                        default=0.001,
+                        default=0.005,
                         help="Learning rate. Default is 0.01.")
 
     parser.add_argument("--test-ratio",
@@ -80,11 +80,11 @@ def parameter_parser():
                         help="Number of training epochs. Default is 200.")
 
     parser.add_argument('--num-layers', type=int, default=3, help='Number of GNN layers.')
-    parser.add_argument('--hid-dim', type=int, default=60, help='Hidden channel size.')
+    parser.add_argument('--hid-dim', type=int, default=64, help='Hidden channel size.')
     parser.add_argument('--edge-lam', type=float, default=20, help='Hidden channel size.')
 
     # PADEL
-    parser.add_argument("--position_dim", nargs='*', default=60, type=int, help="whether using pca")
+    parser.add_argument("--position_dim", nargs='*', default=64, type=int, help="whether using pca")
     parser.add_argument("--pca_dim", nargs='*', default=200, type=int, help="whether using pca")
     parser.add_argument('--aggregator', type=str, default='mean', help='hidden_last size.')
     parser.add_argument('--pca', type=bool, default=True, help='whether using pca.')

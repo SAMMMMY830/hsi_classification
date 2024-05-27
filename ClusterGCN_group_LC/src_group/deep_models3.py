@@ -15,7 +15,7 @@ import Outils.multiple_embedding as mutiple
 
 class DeeperGCN(torch.nn.Module):
 
-    def __init__(self, args, node_feat_dim, hid_dim, out_dim, PE, norm='batch', beta=1.0, clusters = 0, degree_max=0):
+    def __init__(self, args, node_feat_dim, hid_dim, out_dim, norm='batch', beta=1.0, clusters = 0, degree_max=0):
         super(DeeperGCN, self).__init__()
         # para_init
 

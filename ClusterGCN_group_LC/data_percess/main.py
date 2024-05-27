@@ -11,7 +11,8 @@ from termcolor import cprint
 from src.parser import parameter_parser
 from clustering import ClusteringMachine
 # from clustergcn import ClusterGCNTrainer
-from utils import tab_printer, feature_reader, DataLoader, edge_construction,build_graph,graph_reader,save_feature_gt
+from utils import tab_printer, feature_reader, DataLoader, edge_construction, build_graph, graph_reader, \
+    save_feature_gt, DataLoader1
 from position import PositionEncoding
 from tqdm import tqdm
 from sklearn.decomposition import PCA

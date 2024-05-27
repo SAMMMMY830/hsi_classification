@@ -4,6 +4,7 @@ import torch
 import numpy as np
 import pandas as pd
 import networkx as nx
+from skimage.segmentation import slic
 from sklearn import preprocessing
 from sklearn.decomposition import PCA
 from texttable import Texttable
@@ -145,8 +146,8 @@ def sptial_neighbor_matrix(index_all, neighbor, gt):
     """extract the spatial neighbor matrix, if x_j belong to x_i neighbors, thus S_ij = 1"""
     # index_all = np.concatenate((index_train_all, index_test))
     # index_all = dy11
-    L_cor = torch.zeros([2, 1])
-    for kkk in range(len(index_all)):
+    L_cor = torch.zeros([2, 1])  # 初始化[2,1]零矩阵
+    for kkk in range(len(index_all)):  # 每个节点遍历
         [X_cor, Y_cor] = ind2sub([gt.shape[0], gt.shape[1]], index_all[kkk])
         XY_cor = torch.tensor([X_cor, Y_cor]).view(2, 1)
         L_cor = torch.cat((L_cor, XY_cor), dim=1)
@@ -212,6 +213,8 @@ def compute_dist1(array1, array2, type='euclidean'):
         squared_dist[squared_dist < 0] = 0
         dist = np.sqrt(squared_dist)#np.exp(dist - np.tile(np.max(dist, axis=0)[..., np.newaxis], np.size(dist, 1)))
         return dist
+
+
 def train_test_spilts(args, class_count, clusters, sg_features, sg_targets, node_index, train_ratio):
     lists = np.zeros(int(class_count))   # 初始化
     sg_train_nodes={}
@@ -271,52 +274,6 @@ def Cal_accuracy(predict, label):
     Kappa = (n * np.sum(correct_sum) - np.sum(reali * predicti)) * 1.0 / (n * n - np.sum(reali * predicti))
     return OA, Kappa, predictions_mean
 
-def DataLoader(dataset_name):
-    data = []
-    if(dataset_name =='IP'):
-        print("Indian Pine")
-        # data_mat = sio.loadmat('/home/wjx/Cluster_Group/data/IndianPine/Indian_pines_corrected.mat')
-        # data = data_mat['indian_pines_corrected']
-        # gt_mat = sio.loadmat('/home/wjx/Cluster_Group/input/Indian_pines_gt.mat')
-        # gt = gt_mat['indian_pines_gt']
-        class_count = 17
-        train_ratio = 0.015
-        num_graph = 6
-
-    if(dataset_name =='PU'):
-        print("PaviaU")
-        data_mat = sio.loadmat('/home/wjx/Cluster_Group/data/paviau/PaviaU.mat')
-        data = data_mat['paviaU']
-        gt_mat = sio.loadmat('/home/wjx/Cluster_Group/data/paviau/PaviaU_gt.mat')
-        gt = gt_mat['paviaU_gt']
-        class_count = 10
-        train_ratio = 0.005
-        num_graph = 16
-
-    if (dataset_name == 'HS'):
-        print("Houston")
-        data_mat = sio.loadmat('/home/wjx/Cluster_Group/data/houston/Houston.mat')
-        data = data_mat['Houston']
-        gt_mat = sio.loadmat('/home/wjx/Cluster_Group/data/houston/Houston_gt.mat')
-        gt = gt_mat['Houston_gt']
-        class_count = 16
-        train_ratio = 0.01
-        num_graph = 6
-
-
-    if (dataset_name == 'SA'):
-        print("Salinas")
-        data_mat = sio.loadmat('/home/wjx/Cluster_Group/data/salinas/Salinas_corrected.mat')
-        data = data_mat['salinas_corrected']
-        gt_mat = sio.loadmat('/home/wjx/Cluster_Group/data/salinas/Salinas_gt.mat')
-        gt = gt_mat['salinas_gt']
-        class_count = 17
-        train_ratio = 0.01
-        num_graph = 30
-
-    # return data, gt, class_count, train_ratio, num_graph
-    return class_count, train_ratio, num_graph
-
 
 def original_data(dataset_name):
     data = []
@@ -324,8 +281,11 @@ def original_data(dataset_name):
         print("Indian Pine")
         data_mat = sio.loadmat('/home/wjx/Cluster_Group/data/IndianPine/Indian_pines_corrected.mat')
         data = data_mat['indian_pines_corrected']
-        gt_mat = sio.loadmat('/home/wjx/Cluster_Group/input/Indian_pines_gt.mat')
+        gt_mat = sio.loadmat('/home/wjx/Cluster_Group/data/IndianPine/Indian_pines_gt.mat')
         gt = gt_mat['indian_pines_gt']
+        class_count = 17
+        train_ratio = 0.01
+        num_graph = 6
 
     if(dataset_name =='PU'):
         print("PaviaU")
@@ -358,8 +318,23 @@ def original_data(dataset_name):
         train_ratio = 0.01
         num_graph = 30
 
+    gnd = np.array(gt)
+    gnd = np.transpose(gnd)
+
+    gnd = np.array(gnd)
+    data_all = np.array(data)
+    data_all = (data_all - np.min(data_all)) / (np.max(data_all) - np.min(data_all))
+    row_gnd = np.size(gnd, 0)
+    col_gnd = np.size(gnd, 1)
+    dim = np.size(data_all, 2)
+    gnd = np.reshape(gnd, (1, row_gnd * col_gnd))
+
+    fea = np.reshape(data_all, (1, row_gnd * col_gnd, dim))
+    fea = np.squeeze(fea)
+
+    gnd = np.squeeze(gnd)
     # return data, gt, class_count, train_ratio, num_graph
-    return data, gt
+    return fea, gnd, class_count, train_ratio, num_graph, gt
 
 def pca_feature_reader(features):
     """
@@ -368,13 +343,13 @@ def pca_feature_reader(features):
     # 数据标准化
     height, width, bands = features.shape
     data = np.reshape(features, [height * width, bands])
-    if (bands > 60):  # 将数据映射到维度为60的空间
-        pca = PCA(n_components=60)
-        # 拟合数据并进行降维
-        data = pca.fit_transform(data)
-    minMax = preprocessing.StandardScaler()
-    data = minMax.fit_transform(data)  # 将数据转换为标准正态分布（均值为0,标准差为1）。通过从每个特征中减去样本均值并除以标准差来实现的。它常用于那些假定输入特征为正态分布的模型，如许多线性模型和神经网络。
-    # data = np.reshape(data, [height, width, bands])
+    # if (bands > 60):  # 将数据映射到维度为60的空间
+    #     pca = PCA(n_components=60)
+    #     # 拟合数据并进行降维
+    #     data = pca.fit_transform(data)
+    # minMax = preprocessing.StandardScaler()
+    # data = minMax.fit_transform(data)  # 将数据转换为标准正态分布（均值为0,标准差为1）。通过从每个特征中减去样本均值并除以标准差来实现的。它常用于那些假定输入特征为正态分布的模型，如许多线性模型和神经网络。
+    # # data = np.reshape(data, [height, width, bands])
     return data  # 145*145, 60
 
 def feature_reader(path):
@@ -391,75 +366,75 @@ def feature_reader(path):
 
     return g_features, node_id_feat, node_id_rl, node_rl_id
 
-def edge_construction(self, train_node, node_index, train_node_rl):  # train_node 训练集节点；node_index：子图节点；
-    # (self.train_node[i], self.sg_nodes[i], self.train_node[i])
-    """Load citation network dataset (cora only for now)"""
-    # print('Loading {} dataset...'.format(dataset))  path="../data/cora/", dataset="cora",
-    ran_num_sample = 2  # Indian_pines_PCA  PaviaU_sub Houston_PCA
-    gnd = self.g_label.reshape(-1, 1)[node_index]  # 根据子图中的节点选取对应标签
-    gt = np.squeeze(gnd)  # 去掉长度为1的维度
-    features = self.CM.features[node_index]  # 选取节点特征
-
-    print('this is features', np.array(features).shape)
-    # dist1 计算特征间的距离，可以理解为光谱距离
-    dist1 = compute_dist(self.args, np.array(features), np.array(features))
-    # 将dist1中的所有值减去当前行的最大值。
-    dist1 = torch.exp(dist1 - torch.max(dist1, dim=0, keepdim=True).values.expand_as(dist1))
-    # dist1 = torch.exp(dist1 - torch.max(dist1, dim=0, keepdim=True).values.unsqueeze(0)).expand_as(dist1)
-    # dist1 = np.exp(dist1 - np.tile(np.max(dist1, axis=0)[..., np.newaxis], np.size(dist1, 1)))
-    spatial_corrdinates = sptial_neighbor_matrix(np.array(node_index), 3, self.g_label)
-    # dist2 可以理解为空间坐标的距离
-    dist2 = compute_dist(self.args, np.array(spatial_corrdinates), np.array(spatial_corrdinates))
-    # dist2 = dist2 / np.tile(torch.sqrt(torch.sum(dist2 ** 2, 1)), (dist2.shape[0], 1))
-    dist2 = dist2 / torch.sqrt(torch.sum(dist2 ** 2, dim=1, keepdim=True)).expand_as(dist2)
-    # 这里的β=30
-    dist = dist1 + self.args.edge_lam * dist2  # dist = dist1 + 30*dist2
-    dist_new = dist
-
-    idx_train = train_node_rl
-    idx_train = np.array(idx_train).astype(int)
-    # 初始化一个距离
-    labeled_dist = np.zeros((1, len(idx_train)))
-    for i in range(len(idx_train)):
-        labeled_dist = np.concatenate(
-            (labeled_dist, np.array(dist[idx_train[i], idx_train].cpu())[np.newaxis, ...]))
-    # 删除第一行为0的dist
-    labeled_dist = np.delete(labeled_dist, 0, axis=0)
-    first_block_intra_dist = labeled_dist[0:ran_num_sample, 0:ran_num_sample]
-    first_block_intra_dist_sum = np.sum(first_block_intra_dist)
-    sum_2 = 0
-    for j in range(np.max(gt).astype(int) - 1):
-        j = j + 1
-        sum_1 = labeled_dist[j * ran_num_sample:(j + 1) * ran_num_sample,
-                j * ran_num_sample:(j + 1) * ran_num_sample]
-        sum_2 = sum_2 + np.sum(sum_1)
-    sum_intra_all = sum_2 + first_block_intra_dist_sum
-    integer_intra = ran_num_sample * ran_num_sample * np.max(gt)
-    average_sum = sum_intra_all / (integer_intra)
-    # print('this is labels_no_zero', gt)
-    # print('this is 类内平均', average_sum)
-    average_inter = (np.sum(labeled_dist) - np.sum(sum_intra_all)) / (labeled_dist.shape[0] ** 2 - integer_intra)
-    # print('this is 类间平均', average_inter)
-    # print('这是类内类间初始差值（阈值）', average_inter - average_sum)
-    # 这里是去除自己到自己的一个距离，再把大于类内均值的设为inf
-    dist_new = dist_new.cpu() - np.diag(np.diag(dist_new.cpu()))
-    dist_new[dist_new > average_sum] = float('inf')
-    S_dist = np.exp(-dist_new / 6)  # 6
-    lam = 0.01  # 5
-    # 设置邻接矩阵的表达形式
-    S = np.zeros((dist.shape[0], dist.shape[1]))
-    # 先找到每一行的非0元素位置，得到值ai，再把dist矩阵中的对应元素赋给di，拿ai-di得到ad，将概率值设为1.
-    for k in range(len(gt)):
-        a0 = S_dist[k]
-        idxa0 = np.where(a0 > 0)
-        ai = a0[idxa0]
-        di = dist[k][idxa0]
-        ad = ai.to(self.device) - 0.5 * lam * di
-        S[k][idxa0] = EProjSimplex_new(ad.cpu())
-    adj = S
-    # sio.savemat('../data/'+ self.args.Dataset_name + '/adj.mat', {'adj': adj})
-    adj = torch.FloatTensor(adj)
-    return adj
+# def edge_construction(self, train_node, node_index, train_node_rl):  # train_node 训练集节点；node_index：子图节点；
+#     # (self.train_node[i], self.sg_nodes[i], self.train_node[i])
+#     """Load citation network dataset (cora only for now)"""
+#     # print('Loading {} dataset...'.format(dataset))  path="../data/cora/", dataset="cora",
+#     ran_num_sample = 2  # Indian_pines_PCA  PaviaU_sub Houston_PCA
+#     gnd = self.g_label.reshape(-1, 1)[node_index]  # 根据子图中的节点选取对应标签
+#     gt = np.squeeze(gnd)  # 去掉长度为1的维度
+#     features = self.CM.features[node_index]  # 选取节点特征
+#
+#     print('this is features', np.array(features).shape)
+#     # dist1 计算特征间的距离，可以理解为光谱距离
+#     dist1 = compute_dist(self.args, np.array(features), np.array(features))
+#     # 将dist1中的所有值减去当前行的最大值。
+#     dist1 = torch.exp(dist1 - torch.max(dist1, dim=0, keepdim=True).values.expand_as(dist1))
+#     # dist1 = torch.exp(dist1 - torch.max(dist1, dim=0, keepdim=True).values.unsqueeze(0)).expand_as(dist1)
+#     # dist1 = np.exp(dist1 - np.tile(np.max(dist1, axis=0)[..., np.newaxis], np.size(dist1, 1)))
+#     spatial_corrdinates = sptial_neighbor_matrix(np.array(node_index), 3, self.g_label)
+#     # dist2 可以理解为空间坐标的距离
+#     dist2 = compute_dist(self.args, np.array(spatial_corrdinates), np.array(spatial_corrdinates))
+#     # dist2 = dist2 / np.tile(torch.sqrt(torch.sum(dist2 ** 2, 1)), (dist2.shape[0], 1))
+#     dist2 = dist2 / torch.sqrt(torch.sum(dist2 ** 2, dim=1, keepdim=True)).expand_as(dist2)
+#     # 这里的β=30
+#     dist = dist1 + self.args.edge_lam * dist2  # dist = dist1 + 30*dist2
+#     dist_new = dist
+#
+#     idx_train = train_node_rl
+#     idx_train = np.array(idx_train).astype(int)
+#     # 初始化一个距离
+#     labeled_dist = np.zeros((1, len(idx_train)))
+#     for i in range(len(idx_train)):
+#         labeled_dist = np.concatenate(
+#             (labeled_dist, np.array(dist[idx_train[i], idx_train].cpu())[np.newaxis, ...]))
+#     # 删除第一行为0的dist
+#     labeled_dist = np.delete(labeled_dist, 0, axis=0)
+#     first_block_intra_dist = labeled_dist[0:ran_num_sample, 0:ran_num_sample]
+#     first_block_intra_dist_sum = np.sum(first_block_intra_dist)
+#     sum_2 = 0
+#     for j in range(np.max(gt).astype(int) - 1):
+#         j = j + 1
+#         sum_1 = labeled_dist[j * ran_num_sample:(j + 1) * ran_num_sample,
+#                 j * ran_num_sample:(j + 1) * ran_num_sample]
+#         sum_2 = sum_2 + np.sum(sum_1)
+#     sum_intra_all = sum_2 + first_block_intra_dist_sum
+#     integer_intra = ran_num_sample * ran_num_sample * np.max(gt)
+#     average_sum = sum_intra_all / (integer_intra)
+#     # print('this is labels_no_zero', gt)
+#     # print('this is 类内平均', average_sum)
+#     average_inter = (np.sum(labeled_dist) - np.sum(sum_intra_all)) / (labeled_dist.shape[0] ** 2 - integer_intra)
+#     # print('this is 类间平均', average_inter)
+#     # print('这是类内类间初始差值（阈值）', average_inter - average_sum)
+#     # 这里是去除自己到自己的一个距离，再把大于类内均值的设为inf
+#     dist_new = dist_new.cpu() - np.diag(np.diag(dist_new.cpu()))
+#     dist_new[dist_new > average_sum] = float('inf')
+#     S_dist = np.exp(-dist_new / 6)  # 6
+#     lam = 0.01  # 5
+#     # 设置邻接矩阵的表达形式
+#     S = np.zeros((dist.shape[0], dist.shape[1]))
+#     # 先找到每一行的非0元素位置，得到值ai，再把dist矩阵中的对应元素赋给di，拿ai-di得到ad，将概率值设为1.
+#     for k in range(len(gt)):
+#         a0 = S_dist[k]
+#         idxa0 = np.where(a0 > 0)
+#         ai = a0[idxa0]
+#         di = dist[k][idxa0]
+#         ad = ai.to(self.device) - 0.5 * lam * di
+#         S[k][idxa0] = EProjSimplex_new(ad.cpu())
+#     adj = S
+#     # sio.savemat('../data/'+ self.args.Dataset_name + '/adj.mat', {'adj': adj})
+#     adj = torch.FloatTensor(adj)
+#     return adj
 
 def EProjSimplex_new(v, k=1):
     v = np.matrix(v)
@@ -496,3 +471,120 @@ def EProjSimplex_new(v, k=1):
 
 def get_rl_by_ids(data_dict, id_list):
     return [data_dict.get(id, "ID not found") for id in id_list]
+
+
+#  GCGCN
+# def edge_contruction_1(node_index, ori_gt, ori_fea):
+#     """Load """
+#     sg_nodes = node_index
+#     ori_gt = ori_gt
+#     ori_fea = ori_fea
+#     gnd = ori_gt[sg_nodes]
+#     fea = ori_fea[sg_nodes]
+#
+#     # img = io.imread("D:\yunding\paper_four\HSI_data\Indian_29_42_89.png")
+#     data_seg = slic(fea, n_segments=1000, compactness=0.1)  # indian slic 分割 1500, 0.01; pavia 分割 1500, 1
+#     # out = mark_boundaries(img, data_seg)
+#     # plt.imshow(out)
+#     # plt.show()
+#     # sio.savemat('data_seg.mat', {'data_seg': data_seg})
+#     print('this is data shape', fea.shape)
+#
+#     row_gnd = np.size(gnd, 0)
+#     col_gnd = np.size(gnd, 1)
+#     dim = np.size(fea, 1)
+#     gnd = np.reshape(gnd, (1, row_gnd * col_gnd))  # ground truth
+#     ground_truth = gnd.copy()
+#     fea = np.reshape(data_all, (1, row_gnd * col_gnd, dim))
+#     fea = np.squeeze(fea)
+#     # kmeans = KMeans(n_clusters=100, random_state=0).fit(fea)
+#     # data_seg = kmeans.labels_
+#
+#     gnd = np.squeeze(gnd)
+#     ground_truth = gnd.copy()
+#     choice = np.where(gnd != 0)  # 标签不为0节点id（节点索引）
+#     # gnd_new = gnd[choice]
+#     segments = np.reshape(data_seg, (1, row_gnd * col_gnd))
+#     segments = np.squeeze(segments)
+#
+#     index_all = choice
+#     fts = fea[choice]  # fts = samples*dimension
+#     lbls = gnd[choice]  # find labels
+#     seg_labels = segments[choice]
+#     unique_seg_lbls = np.unique(seg_labels)
+#     len_seg_lbls = len(unique_seg_lbls)  # find the unique length of segment labels
+#     mean_pixel = np.zeros((1, dim))
+#     unique_seg_labels = np.unique(seg_labels)
+#     max_seg_lab = np.max(segments)
+#
+#     # YY = np.zeros((fea_train.shape[0], lbls.max().astype(int)))
+#
+#     index_seg_all = []
+#     for j in range(len_seg_lbls):
+#         index_seg = np.where(seg_labels == unique_seg_labels[j])
+#         index_seg = np.column_stack(index_seg)
+#         bb = len(index_seg)
+#         cc = np.sum(fts[index_seg, :], axis=0) / bb
+#         mean_pixel = np.concatenate((mean_pixel, cc))
+#     mean_pixel = np.delete(mean_pixel, 0, axis=0)
+#     dist1 = compute_dist(np.array(fts), np.array(mean_pixel))
+#     dist_mean1 = compute_dist(np.array(mean_pixel), np.array(mean_pixel))
+#     spatial_coordinates = sptial_neighbor_matrix(index_all[0], gt)  #
+#     mean_coordinates = np.zeros((1, spatial_coordinates.shape[1]))  # max_seg_lab
+#     for jj in range(len_seg_lbls):
+#         index_seg = np.where(seg_labels == unique_seg_labels[jj])  #
+#         index_seg = np.column_stack(index_seg)
+#         bb = len(index_seg)
+#         cc = np.sum(spatial_coordinates[index_seg, :], axis=0) / bb
+#         mean_coordinates = np.concatenate((mean_coordinates, cc))
+#     mean_coordinates = np.delete(mean_coordinates, 0, axis=0)  #
+#     dist3 = compute_dist(np.array(spatial_coordinates), np.array(mean_coordinates))
+#     dist3 = dist3 / np.tile(np.sqrt(np.sum(dist3 ** 2, 1))[..., np.newaxis], (1, dist3.shape[1]))
+#     dist_mean3 = compute_dist(np.array(mean_coordinates), np.array(mean_coordinates))
+#     dist_mean3 = dist_mean3 / np.tile(np.sqrt(np.sum(dist_mean3 ** 2, 1))[..., np.newaxis], (1, dist_mean3.shape[1]))
+#
+#     dist = dist1 + 50 * dist3  # 30  +parameter[r]
+#     lam = 15  # parameter[r1]  #indian 10  pavia 5
+#     S = np.zeros((np.array(fts).shape[0], len_seg_lbls))
+#     for k in range(np.array(fts).shape[0]):
+#         idxa0 = range(len_seg_lbls)
+#         di = dist[k, :]
+#         ad = -0.5 * lam * di
+#         S[k][idxa0] = EProjSimplex_new(ad)
+#
+#     dist_mean = dist_mean1 + 50 * dist_mean3
+#     beta = 15  # indian :12 pavia 5 lam1
+#     S_mean = np.zeros((len_seg_lbls, len_seg_lbls))
+#     for k in range(len_seg_lbls):
+#         idxa0 = range(len_seg_lbls)
+#         di = dist_mean[k, :]
+#         ad = -0.5 * beta * di
+#         S_mean[k][idxa0] = EProjSimplex_new(ad)
+#
+#     S_mean = S_mean - np.diag(np.diag(S_mean))
+#     S_mean = (S_mean + S_mean.transpose()) / 2
+#     # DS = np.sum(S_mean, axis=1)
+#     DS = np.mat(np.diag(np.sum(S_mean, axis=1)))
+#     L_S_mean = DS - S_mean
+#     S_mean_opt = (np.eye(len_seg_lbls) + L_S_mean / 0.1).I  # 0.1
+#     S_mean_opt = np.array(S_mean_opt)
+#
+#     S = np.dot(S, S_mean_opt)
+#     eps = 1e-5
+#     DE = np.sum(S, axis=0)
+#     invDE = np.mat(np.diag(np.power(DE + eps, -1)))
+#     # pdb.set_trace() ######################################################################
+#     #########################################################################################
+#
+#     #########################################################################################
+#     G = np.dot(S, invDE).dot(S.transpose())
+#
+#     lbls = lbls
+#     # lbls = lbls.astype(np.long)
+#     idx = range(len(lbls))
+#     # idx_train = idx[0:len(idx_train_index)]
+#     # idx_test = idx[len(idx_train_index):]
+#     #
+#     # return fts, lbls, idx_train_index, idx_train, idx_test_index, idx_test, G, mean_pixel, index_all, ground_truth
+#     # return data, gt
+#     return fts, lbls, G, index_all[0]

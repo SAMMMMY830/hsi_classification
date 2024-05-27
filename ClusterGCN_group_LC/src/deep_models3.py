@@ -32,6 +32,7 @@ class DeeperGCN(torch.nn.Module):
         self.hid_dim = hid_dim
         self.node_feat_dim = node_feat_dim
         self.module_num = 1
+        self.input_dim = self.node_feat_dim + self.hid_dim
         self.class_num = out_dim
         self.clusters = clusters
         # model_init
@@ -52,7 +53,7 @@ class DeeperGCN(torch.nn.Module):
         # self.idx_graph = nn.ModuleList()
         self.bilstm = nn.ModuleList()
         self.in_emb_dim = self.module_num * self.hid_dim
-        # self.conv1 = GCNLayers(self.hid_dim*2, self.hid_dim)
+        self.conv1 = GCNLayers(self.hid_dim*2, self.hid_dim)
         self.conv2 = GCNLayers(self.hid_dim, self.hid_dim)
         # self.embedding_layer = nn.Embedding(
         #     num_embeddings= len(self.nodes),
@@ -68,14 +69,14 @@ class DeeperGCN(torch.nn.Module):
             self.grouping=mutiple.MLGrouping(args, self.in_emb_dim)
         else:
             self.grouping=mutiple.QGrouping(args, self.in_emb_dim)
-        self.norms=norm_layer(norm,  hid_dim)
+        self.norms=norm_layer(norm,  self.node_feat_dim)
         # self.d_norms.append(norm_layer(norm,  hid_dim))
 
         self.PE = PE
         self.linear = nn.Linear(node_feat_dim, self.class_num)
         self.bilstm = LSTM(args)
-        self.mlp1 = MLP(self.hid_dim*2, self.hid_dim)
-        self.mlp2 = MLP(self.hid_dim*4, self.hid_dim)
+        self.mlp1 = MLP(self.input_dim, self.hid_dim)
+        self.mlp2 = MLP(self.hid_dim*4 + self.input_dim, self.hid_dim*2)
         self.classifier = PClassifier(args, self.class_num)
 
 
@@ -229,32 +230,33 @@ class DeeperGCN(torch.nn.Module):
     def train_epoch3(self, sg_nodes, node_feats, train_nodes, init_adj, target, init_feat, cluster):
         xs = []
         x_n = []
-        node_num = node_feats.size(0)
-        pre_feat = node_feats
+        node_num = node_feats.size(0)  # 200
+        pre_feat = node_feats  # 200
         cur_feat = self.norms(pre_feat)
         cur_raw_adj, cur_adj = self.learn_adj(init_adj, cur_feat, cluster)
-        best_dist = cur_dist = self.compute_dist(pre_feat)
+        # best_dist = cur_dist = self.compute_dist(pre_feat)
         # 节点位置编码
-        node_rl = get_rl_by_ids(self.node_id_rl, sg_nodes)
+        node_rl = get_rl_by_ids(self.node_id_rl, sg_nodes) # nodeid对应的序号用于索引位置编码
         position_embedding = self.PE(node_rl)
         sg_nodes_em = torch.tensor(sg_nodes).to(self.args.device)
-        neighbor_position_feat = torch.cat((torch.squeeze(position_embedding, dim=0), pre_feat), dim=1)  # 1708*120
-        neighbor_position_feat = self.mlp1(neighbor_position_feat)
+        pre_NP_feat = torch.cat((torch.squeeze(position_embedding, dim=0), pre_feat), dim=1)  # 1708*264
+        neighbor_position_feat = self.mlp1(pre_NP_feat)  # 1708*64
         # 位置编码输入BiLSTM获取节点的结构信息
         # self.embedding_layer(sg_nodes_em)
         # edge_index = self.adj_to_edge_index(cur_adj)
-        structure_embedding = self.bilstm(position_embedding, node_num)
+        structure_embedding = self.bilstm(position_embedding, node_num)  # 1*64
 
         # 对光谱特征多样化
         xs.append(neighbor_position_feat)
         x_n.append(torch.cat(xs, dim=-1))
-        x_group = self.grouping(x_n[0])
+        x_group = self.grouping(x_n[0])  # N*4*64
         x_cat = x_group[0].reshape(node_num, -1)
+        x_cat = torch.cat((x_cat, pre_NP_feat), dim=1)
         cur_feat = self.mlp2(x_cat)
 
 
         # 对当前节点表示做两层GCN
-        cur_feat = F.leaky_relu(self.conv2(cur_feat, cur_adj))
+        cur_feat = F.leaky_relu(self.conv1(cur_feat, cur_adj))
         cur_feat = F.dropout(cur_feat, p=self.dropout, training=self.training)
         neibor_position_emb = self.conv2(cur_feat, cur_adj)
         # pred = torch.add(neibor_position_emb, structure_embedding)
@@ -275,34 +277,33 @@ class DeeperGCN(torch.nn.Module):
     def test_epoch(self, sg_nodes, node_feats, init_adj, cluster):
         xs = []
         x_n = []
-        node_num = node_feats.size(0)
-        pre_feat = node_feats
+        node_num = node_feats.size(0)  # 200
+        pre_feat = node_feats  # 200
         cur_feat = self.norms(pre_feat)
         cur_raw_adj, cur_adj = self.learn_adj(init_adj, cur_feat, cluster)
-        best_dist = cur_dist = self.compute_dist(pre_feat)
+        # best_dist = cur_dist = self.compute_dist(pre_feat)
         # 节点位置编码
-        node_rl = get_rl_by_ids(self.node_id_rl, sg_nodes)
+        node_rl = get_rl_by_ids(self.node_id_rl, sg_nodes) # nodeid对应的序号用于索引位置编码
         position_embedding = self.PE(node_rl)
         sg_nodes_em = torch.tensor(sg_nodes).to(self.args.device)
-        neighbor_position_feat = torch.cat((torch.squeeze(position_embedding, dim=0), pre_feat), dim=1)  # 1708*120
-        neighbor_position_feat = self.mlp1(neighbor_position_feat)
+        pre_NP_feat = torch.cat((torch.squeeze(position_embedding, dim=0), pre_feat), dim=1)  # 1708*264
+        neighbor_position_feat = self.mlp1(pre_NP_feat)  # 1708*64
         # 位置编码输入BiLSTM获取节点的结构信息
         # self.embedding_layer(sg_nodes_em)
         # edge_index = self.adj_to_edge_index(cur_adj)
-        structure_embedding = self.bilstm(position_embedding, node_num)
+        structure_embedding = self.bilstm(position_embedding, node_num)  # 1*64
 
         # 对光谱特征多样化
         xs.append(neighbor_position_feat)
         x_n.append(torch.cat(xs, dim=-1))
-        x_group = self.grouping(x_n[0])
+        x_group = self.grouping(x_n[0])  # N*4*64
         x_cat = x_group[0].reshape(node_num, -1)
+        x_cat = torch.cat((x_cat, pre_NP_feat), dim=1)
         cur_feat = self.mlp2(x_cat)
 
-        # 拼接位置编码 + 光谱特征
-        # cur_feat = torch.cat((torch.squeeze(position_embedding, dim=0), group_feat), dim=1)
 
         # 对当前节点表示做两层GCN
-        cur_feat = F.leaky_relu(self.conv2(cur_feat, cur_adj))
+        cur_feat = F.leaky_relu(self.conv1(cur_feat, cur_adj))
         cur_feat = F.dropout(cur_feat, p=self.dropout, training=self.training)
         neibor_position_emb = self.conv2(cur_feat, cur_adj)
         # pred = torch.add(neibor_position_emb, structure_embedding)

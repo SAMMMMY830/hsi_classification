@@ -268,9 +268,9 @@ def Cal_accuracy(predict, label):
 def DataLoader(dataset_name):
     data = []
     if(dataset_name =='IP'):
-        data_mat = sio.loadmat('/home/wjx/Cluster_Group/input/Indian_pines_corrected.mat')
+        data_mat = sio.loadmat('/home/wjx/Cluster_Group/data/IndianPine/Indian_pines_corrected.mat')
         data = data_mat['indian_pines_corrected']
-        gt_mat = sio.loadmat('/home/wjx/Cluster_Group/input/Indian_pines_gt.mat')
+        gt_mat = sio.loadmat('/home/wjx/Cluster_Group/data/IndianPine/Indian_pines_gt.mat')
         gt = gt_mat['indian_pines_gt']
         class_count = 17
         train_ratio = 0.015

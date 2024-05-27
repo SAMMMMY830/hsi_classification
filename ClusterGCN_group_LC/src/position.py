@@ -96,6 +96,13 @@ class PositionEncoding(nn.Module):
         # self.pca_matrix /= self.pca_matrix.std()   # self.pca_matrix.std()计算pca_matrix的标准差，将self.pca_matrix的每个元素除以整个矩阵的标准差来进行标准化。
         # self.pca_matrix.to(self.device)
         self.pca = PCA(n_components=self.args.pca_dim)
+        self.pca_matrix = self.pca.fit_transform(self.dist_matrix)
+        tmp_matrix = torch.zeros([len(self.graph) + 1, self.pca_dim])
+        tmp_matrix[1:] = torch.from_numpy(self.pca_matrix).float()[1:]
+        self.pca_matrix = tmp_matrix
+        self.pca_matrix /= self.pca_matrix.std()
+        self.pca_matrix.to(self.device)
+        # self.pca_matrix = PCA(n_components=self.args.pca_dim)
 
 
     def forward(self, nodes):

@@ -7,8 +7,11 @@ import torch
 from src.parser import parameter_parser
 from clustering import ClusteringMachine
 from clustergcn import ClusterGCNTrainer
-from utils import tab_printer, feature_reader, DataLoader, graph_reader, label_reader, original_data, pca_feature_reader
+from utils import tab_printer, feature_reader, graph_reader, label_reader, original_data
 from position import PositionEncoding
+
+
+# def objective(trial):
 
 
 def train_test(args, CM):
@@ -23,6 +26,7 @@ def train_test(args, CM):
     AA1 = []
     for i in range(epoch):
         # 初始化模型
+
         PE = PositionEncoding(args, CM.graph)
         gcn_trainer = ClusterGCNTrainer(args, CM, PE)
         loss = gcn_trainer.train()
@@ -90,20 +94,18 @@ def train_test(args, CM):
 
 def main(args):
     torch.manual_seed(args.seed)
-    orig_features, orig_label = original_data(args.Dataset_Name)
-    pca_features = pca_feature_reader(orig_features)
+    orig_features, orig_label, class_count, train_ratio, num_graph, gnd = original_data(args.Dataset_Name) # gnd = 145*145
+    # pca_features = pca_feature_reader(orig_features)  # 对特征维度进行降维
+    # orig_features, lbls, G_adj, index_all = DataLoader(args.Dataset_Name)
 
-
-
-    class_count, train_ratio, num_graph = DataLoader(args.Dataset_Name)
     G_path = os.path.join(args.graph_path, args.Dataset_Name,"edge_list.csv")
     G_fea_path = os.path.join(args.graph_path, args.Dataset_Name,"features.csv")
     G_gt_path = os.path.join(args.graph_path, args.Dataset_Name,"gt.csv")
     # 读文件获取图、特征、标签
     G = graph_reader(G_path)
     G_features, node_id_feat, node_id_rl, node_rl_id = feature_reader(G_fea_path)
-    label_dict, node_rls, node_ids, labels = label_reader(G_gt_path)
-    CM = ClusteringMachine(args, G, node_id_feat, node_id_rl, G_features, label_dict, class_count, train_ratio, num_graph, node_ids, labels, pca_features, orig_features, orig_label)
+    label_dict, node_rls, node_ids, labels = label_reader(G_gt_path)   # 10249
+    CM = ClusteringMachine(args, G, node_id_feat, node_id_rl, G_features, label_dict, class_count, train_ratio, num_graph, node_ids, labels, orig_features, orig_label, gnd)
 
     # 拆分子图，返回self.sg_features, self.sg_targets, self.sg_nodes
     CM.decompose()
@@ -116,5 +118,5 @@ if __name__ == "__main__":
     Parsing command line parameters, reading data, graph decomposition, fitting a ClusterGCN and scoring the model.
     """
     args = parameter_parser()
-    args.embedding_dim = [60 * i for i in args.num_group]
+    args.embedding_dim = [args.hid_dim * i for i in args.num_group]
     main(args)

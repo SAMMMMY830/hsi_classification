@@ -36,7 +36,7 @@ class PositionEncoding(nn.Module):
     def init_dist_matrix(self):
         matrix_path = os.path.join('/home/wjx/Cluster_Group/output/', self.data_name)
         try:
-            self.dist_matrix = np.load(os.path.join(matrix_path,'dist_matrix.npy'))
+            self.dist_matrix = np.load(os.path.join(matrix_path,'pca_matrix.npy'))
             print('Loading precomputed cosine postion encoding files……')
         except:
             os.makedirs(matrix_path, exist_ok=True)
@@ -73,24 +73,33 @@ class PositionEncoding(nn.Module):
         '''
         公式（3）
         '''
-        if self.pca:
-            if os.path.exists(os.path.join(matrix_path, 'pca_dist.npy')):
-                print('Loading PCA from', os.path.join(matrix_path,'pca_dist.npy'))
-                self.pca_matrix = np.load(os.path.join(matrix_path, 'pca_dist.npy'))
-            else:
-                print('Pre-computing PCA')
-                self.pca = PCA(n_components= self.args.pca_dim)
-                self.pca_matrix = self.pca.fit_transform(self.dist_matrix)       # 调用PCA.fit_transform方法，用dist_matrix来训练PCA模型，实现数据降噪降维
-                np.save(os.path.join(matrix_path, 'pca_dist.npy'), self.pca_matrix)
-                print('Saving PCA to', os.path.join(matrix_path, 'pca_dist.npy'))   # pca_dist保存到pca_dist.npy中
-            tmp_matrix = torch.zeros([len(self.graph)+1, self.pca_dim])    # 初始化N*pca_dim矩阵
-            tmp_matrix[1:] = torch.from_numpy(self.pca_matrix).float()[1:]  # 将pca_matrix填充到tmp_matrix中，第一行为空
-        else:
-            tmp_matrix = torch.zeros([len(self.graph)+1, len(self.graph)+1])
-            tmp_matrix[1:, 1:] = torch.from_numpy(self.pca_matrix).float()[1:, 1:]
-        self.pca_matrix = tmp_matrix   # 将tmp_matrix赋值给pca_matrix
-        self.pca_matrix /= self.pca_matrix.std()   # self.pca_matrix.std()计算pca_matrix的标准差，将self.pca_matrix的每个元素除以整个矩阵的标准差来进行标准化。
+        self.pca = PCA(n_components=self.args.pca_dim)
+        self.pca_matrix = self.pca.fit_transform(self.dist_matrix)
+        tmp_matrix = torch.zeros([len(self.graph) + 1, self.pca_dim])
+        tmp_matrix[1:] = torch.from_numpy(self.pca_matrix).float()[1:]
+        self.pca_matrix = tmp_matrix
+        self.pca_matrix /= self.pca_matrix.std()
         self.pca_matrix.to(self.device)
+        np.save(os.path.join(matrix_path, 'pca_dist.npy'), self.pca_matrix)
+        print('Saving PCA to', os.path.join(matrix_path, 'pca_dist.npy'))
+        # if self.pca:
+        #     if os.path.exists(os.path.join(matrix_path, 'pca_dist.npy')):
+        #         print('Loading PCA from', os.path.join(matrix_path,'pca_dist.npy'))
+        #         self.pca_matrix = np.load(os.path.join(matrix_path, 'pca_dist.npy'))
+        #     else:
+        #         print('Pre-computing PCA')
+        #         self.pca = PCA(n_components= self.args.pca_dim)
+        #         self.pca_matrix = self.pca.fit_transform(self.dist_matrix)       # 调用PCA.fit_transform方法，用dist_matrix来训练PCA模型，实现数据降噪降维
+        #         np.save(os.path.join(matrix_path, 'pca_dist.npy'), self.pca_matrix)
+        #         print('Saving PCA to', os.path.join(matrix_path, 'pca_dist.npy'))   # pca_dist保存到pca_dist.npy中
+        #     tmp_matrix = torch.zeros([len(self.graph)+1, self.pca_dim])    # 初始化N*pca_dim矩阵
+        #     tmp_matrix[1:] = torch.from_numpy(self.pca_matrix).float()[1:]  # 将pca_matrix填充到tmp_matrix中，第一行为空
+        # else:
+        #     tmp_matrix = torch.zeros([len(self.graph)+1, len(self.graph)+1])
+        #     tmp_matrix[1:, 1:] = torch.from_numpy(self.pca_matrix).float()[1:, 1:]
+        # self.pca_matrix = tmp_matrix   # 将tmp_matrix赋值给pca_matrix
+        # self.pca_matrix /= self.pca_matrix.std()   # self.pca_matrix.std()计算pca_matrix的标准差，将self.pca_matrix的每个元素除以整个矩阵的标准差来进行标准化。
+        # self.pca_matrix.to(self.device)
         '''
         公式（3）
         '''

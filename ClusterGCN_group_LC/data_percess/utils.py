@@ -508,6 +508,163 @@ def DataLoader(dataset_name):
 
     gnd = np.squeeze(gnd)
     ground_truth = gnd.copy()
+    choice = np.where(gnd != 0)   # 标签不为0节点id（节点索引）
+    # gnd_new = gnd[choice]
+    segments = np.reshape(data_seg, (1, row_gnd * col_gnd))
+    segments = np.squeeze(segments)
+
+    index_all = choice
+    fts = fea[choice]  # fts = samples*dimension
+    lbls = gnd[choice]  # find labels
+    seg_labels = segments[choice]
+    unique_seg_lbls = np.unique(seg_labels)
+    len_seg_lbls = len(unique_seg_lbls)  # find the unique length of segment labels
+    mean_pixel = np.zeros((1, dim))
+    unique_seg_labels = np.unique(seg_labels)
+    max_seg_lab = np.max(segments)
+
+    # YY = np.zeros((fea_train.shape[0], lbls.max().astype(int)))
+
+    index_seg_all = []
+    for j in range(len_seg_lbls):
+        index_seg = np.where(seg_labels == unique_seg_labels[j])
+        index_seg = np.column_stack(index_seg)
+        bb = len(index_seg)
+        cc = np.sum(fts[index_seg, :], axis=0) / bb
+        mean_pixel = np.concatenate((mean_pixel, cc))
+    mean_pixel = np.delete(mean_pixel, 0, axis=0)
+    dist1 = compute_dist(np.array(fts), np.array(mean_pixel))
+    dist_mean1 = compute_dist(np.array(mean_pixel), np.array(mean_pixel))
+    spatial_coordinates = sptial_neighbor_matrix(index_all[0], gt)  #
+    mean_coordinates = np.zeros((1, spatial_coordinates.shape[1]))  # max_seg_lab
+    for jj in range(len_seg_lbls):
+        index_seg = np.where(seg_labels == unique_seg_labels[jj])  #
+        index_seg = np.column_stack(index_seg)
+        bb = len(index_seg)
+        cc = np.sum(spatial_coordinates[index_seg, :], axis=0) / bb
+        mean_coordinates = np.concatenate((mean_coordinates, cc))
+    mean_coordinates = np.delete(mean_coordinates, 0, axis=0)  #
+    dist3 = compute_dist(np.array(spatial_coordinates), np.array(mean_coordinates))
+    dist3 = dist3 / np.tile(np.sqrt(np.sum(dist3 ** 2, 1))[..., np.newaxis], (1, dist3.shape[1]))
+    dist_mean3 = compute_dist(np.array(mean_coordinates), np.array(mean_coordinates))
+    dist_mean3 = dist_mean3 / np.tile(np.sqrt(np.sum(dist_mean3 ** 2, 1))[..., np.newaxis], (1, dist_mean3.shape[1]))
+
+    dist = dist1 + 50 * dist3  # 30  +parameter[r]
+    lam = 15  # parameter[r1]  #indian 10  pavia 5
+    S = np.zeros((np.array(fts).shape[0], len_seg_lbls))
+    for k in range(np.array(fts).shape[0]):
+        idxa0 = range(len_seg_lbls)
+        di = dist[k, :]
+        ad = -0.5 * lam * di
+        S[k][idxa0] = EProjSimplex_new(ad)
+
+    dist_mean = dist_mean1 + 50 * dist_mean3
+    beta = 15  # indian :12 pavia 5 lam1
+    S_mean = np.zeros((len_seg_lbls, len_seg_lbls))
+    for k in range(len_seg_lbls):
+        idxa0 = range(len_seg_lbls)
+        di = dist_mean[k, :]
+        ad = -0.5 * beta * di
+        S_mean[k][idxa0] = EProjSimplex_new(ad)
+
+    S_mean = S_mean - np.diag(np.diag(S_mean))
+    S_mean = (S_mean + S_mean.transpose()) / 2
+    # DS = np.sum(S_mean, axis=1)
+    DS = np.mat(np.diag(np.sum(S_mean, axis=1)))
+    L_S_mean = DS - S_mean
+    S_mean_opt = (np.eye(len_seg_lbls) + L_S_mean / 0.1).I  # 0.1
+    S_mean_opt = np.array(S_mean_opt)
+
+    S = np.dot(S, S_mean_opt)
+    eps = 1e-5
+    DE = np.sum(S, axis=0)
+    invDE = np.mat(np.diag(np.power(DE + eps, -1)))
+    # pdb.set_trace() ######################################################################
+    #########################################################################################
+
+    #########################################################################################
+    G = np.dot(S, invDE).dot(S.transpose())
+
+    lbls = lbls
+    # lbls = lbls.astype(np.long)
+    idx = range(len(lbls))
+    # idx_train = idx[0:len(idx_train_index)]
+    # idx_test = idx[len(idx_train_index):]
+    #
+    # return fts, lbls, idx_train_index, idx_train, idx_test_index, idx_test, G, mean_pixel, index_all, ground_truth
+    # return data, gt
+    return fts, lbls, G, index_all[0]
+
+
+def DataLoader1(dataset_name):
+    data = []
+    if (dataset_name == 'IP'):
+        print("Indian Pine")
+        data_mat = sio.loadmat('/home/wjx/Cluster_Group/data/IndianPine/Indian_pines_corrected.mat')
+        data = data_mat['indian_pines_corrected']
+        gt_mat = sio.loadmat('/home/wjx/Cluster_Group/data/IndianPine/Indian_pines_gt.mat')
+        gt = gt_mat['indian_pines_gt']
+        # class_count = 17
+        # train_ratio = 0.015
+        # num_graph = 6
+
+    if (dataset_name == 'PU'):
+        print("PaviaU")
+        data_mat = sio.loadmat('/home/wjx/Cluster_Group/data/paviau/PaviaU.mat')
+        data = data_mat['paviaU']
+        gt_mat = sio.loadmat('/home/wjx/Cluster_Group/data/paviau/PaviaU_gt.mat')
+        gt = gt_mat['paviaU_gt']
+        # class_count = 10
+        # train_ratio = 0.005
+        # num_graph = 16
+
+    if (dataset_name == 'HS'):
+        print("Houston")
+        data_mat = sio.loadmat('/home/wjx/Cluster_Group/data/houston/Houston.mat')
+        data = data_mat['Houston']
+        gt_mat = sio.loadmat('/home/wjx/Cluster_Group/data/houston/Houston_gt.mat')
+        gt = gt_mat['Houston_gt']
+        # class_count = 16
+        # train_ratio = 0.01
+        # num_graph = 6
+
+    if (dataset_name == 'SA'):
+        print("Salinas")
+        data_mat = sio.loadmat('/home/wjx/Cluster_Group/data/salinas/Salinas_corrected.mat')
+        data = data_mat['salinas_corrected']
+        gt_mat = sio.loadmat('/home/wjx/Cluster_Group/data/salinas/Salinas_gt.mat')
+        gt = gt_mat['salinas_gt']
+        # class_count = 17
+        # train_ratio = 0.01
+        # num_graph = 30
+
+    gnd = np.array(gt)
+    gnd = np.transpose(gnd)
+
+    gnd = np.array(gnd)
+    gt = gnd
+    data_all = np.array(data)
+    data_all = (data_all - np.min(data_all)) / (np.max(data_all) - np.min(data_all))  # 对数据进行标准化
+    # img = io.imread("D:\yunding\paper_four\HSI_data\Indian_29_42_89.png")
+    data_seg = slic(data_all, n_segments=2000, compactness=0.1)  # indian slic 分割 1500, 0.01; pavia 分割 1500, 1
+    # out = mark_boundaries(img, data_seg)
+    # plt.imshow(out)
+    # plt.show()
+    # sio.savemat('data_seg.mat', {'data_seg': data_seg})
+    print('this is data shape', data_all.shape)
+
+    row_gnd = np.size(gnd, 0)
+    col_gnd = np.size(gnd, 1)
+    dim = np.size(data_all, 2)
+    gnd = np.reshape(gnd, (1, row_gnd * col_gnd))  # ground truth
+    ground_truth = gnd.copy()
+    fea = np.reshape(data_all, (1, row_gnd * col_gnd, dim))
+    fea = np.squeeze(fea)
+    # kmeans = KMeans(n_clusters=100, random_state=0).fit(fea)
+    # data_seg = kmeans.labels_
+
+    gnd = np.squeeze(gnd)
+    ground_truth = gnd.copy()
     choice = np.where(gnd != 0)
     segments = np.reshape(data_seg, (1, row_gnd * col_gnd))
     segments = np.squeeze(segments)
@@ -628,7 +785,6 @@ def DataLoader(dataset_name):
     # return fts, lbls, idx_train_index, idx_train, idx_test_index, idx_test, G, mean_pixel, index_all, ground_truth
     # return data, gt
     return fts, lbls, G, index_all
-
 
 def feature_reader(features):
     """

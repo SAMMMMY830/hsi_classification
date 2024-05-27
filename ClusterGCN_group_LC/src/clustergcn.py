@@ -18,7 +18,11 @@ class ClusterGCNTrainer(object):
     def __init__(self, args, CM, PE):
         """
         :param ags: Arguments object.
-        :param CM:
+        :param gt: 10249
+        :param gnd: 145*145
+        :param g_label: 21025
+        features: 10249
+
         """
         self.args = args
         # 初始化layer矩阵，0，cluster_number*cluster_number
@@ -28,11 +32,12 @@ class ClusterGCNTrainer(object):
         # self.layer = np.zeros(self.num_graph)
         # self.best_layer = np.zeros(self.num_graph)
         self.index = self.CM.node_ids  # 所有节点
-        self.gt = self.CM.ground_truth  # 所有节点标签
+        self.gt = self.CM.gt  # 10249
         self.node_id_rl = self.CM.node_id_rl
         self.features = self.CM.features  # 所有节点特征 10249
-        self.g_label = self.CM.orig_label
-        # self.y_all = self.g_label.reshape(-1, )
+        self.orig_feature = self.CM.orig_feature
+        self.gnd = self.CM.gnd   # 145* 145
+        self.g_label = self.CM.g_label  # 21025
         self.clusters = self.CM.clusters
         self.sub_feat = self.CM.sg_features  # 子图特征列表
         self.sg_targets = self.CM.sg_targets  # 子图标签列表
@@ -219,9 +224,9 @@ class ClusterGCNTrainer(object):
         """Load citation network dataset (cora only for now)"""
         # print('Loading {} dataset...'.format(dataset))  path="../data/cora/", dataset="cora",
         ran_num_sample = 2  # Indian_pines_PCA  PaviaU_sub Houston_PCA
-        gnd = self.g_label.reshape(-1, 1)[node_index]  # 根据子图中的节点选取对应标签
-        gt = np.squeeze(gnd)    # 去掉长度为1的维度
-        features = self.CM.pca_feature[node_index]    # 选取节点特征
+        g_label = self.g_label[node_index]  # 根据子图中的节点选取对应标签
+        # gt = np.squeeze(gnd)    # 去掉长度为1的维度
+        features = self.orig_feature[node_index]    # 选取节点特征
 
         print('this is features', np.array(features).shape)
         # dist1 可以理解为光谱距离
@@ -230,7 +235,7 @@ class ClusterGCNTrainer(object):
         dist1 = torch.exp(dist1 - torch.max(dist1, dim=0, keepdim=True).values.expand_as(dist1))
         # dist1 = torch.exp(dist1 - torch.max(dist1, dim=0, keepdim=True).values.unsqueeze(0)).expand_as(dist1)
         # dist1 = np.exp(dist1 - np.tile(np.max(dist1, axis=0)[..., np.newaxis], np.size(dist1, 1)))
-        spatial_corrdinates = sptial_neighbor_matrix(np.array(node_index), 3, self.g_label)
+        spatial_corrdinates = sptial_neighbor_matrix(np.array(node_index), 3, self.gnd)
         # dist2 可以理解为空间坐标的距离
         dist2 = compute_dist(self.args, np.array(spatial_corrdinates), np.array(spatial_corrdinates))
         # dist2 = dist2 / np.tile(torch.sqrt(torch.sum(dist2 ** 2, 1)), (dist2.shape[0], 1))
@@ -251,13 +256,13 @@ class ClusterGCNTrainer(object):
         first_block_intra_dist = labeled_dist[0:ran_num_sample, 0:ran_num_sample]
         first_block_intra_dist_sum = np.sum(first_block_intra_dist)
         sum_2 = 0
-        for j in range(np.max(gt).astype(int) - 1):
+        for j in range(np.max(g_label).astype(int) - 1):
             j = j + 1
             sum_1 = labeled_dist[j * ran_num_sample:(j + 1) * ran_num_sample,
                     j * ran_num_sample:(j + 1) * ran_num_sample]
             sum_2 = sum_2 + np.sum(sum_1)
         sum_intra_all = sum_2 + first_block_intra_dist_sum
-        integer_intra = ran_num_sample * ran_num_sample * np.max(gt)
+        integer_intra = ran_num_sample * ran_num_sample * np.max(g_label)
         average_sum = sum_intra_all / (integer_intra)
         # print('this is labels_no_zero', gt)
         # print('this is 类内平均', average_sum)
@@ -272,7 +277,7 @@ class ClusterGCNTrainer(object):
         # 设置邻接矩阵的表达形式
         S = np.zeros((dist.shape[0], dist.shape[1]))
         # 先找到每一行的非0元素位置，得到值ai，再把dist矩阵中的对应元素赋给di，拿ai-di得到ad，将概率值设为1.
-        for k in range(len(gt)):
+        for k in range(len(g_label)):
             a0 = S_dist[k]
             idxa0 = np.where(a0 > 0)
             ai = a0[idxa0]
@@ -283,6 +288,7 @@ class ClusterGCNTrainer(object):
         # sio.savemat('../data/'+ self.args.Dataset_name + '/adj.mat', {'adj': adj})
         adj = torch.FloatTensor(adj)
         return adj
+
 
 def EProjSimplex_new(v, k=1):
     v = np.matrix(v)
